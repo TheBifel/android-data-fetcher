@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="10dp"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/select_colors"/>
+    <LinearLayout
+        android:id="@+id/selectColorsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:layout_weight="1"
+            android:onClick="onSelectBackground"
+            android:text="@string/set_background"
+            android:textAllCaps="false"
+            style="?android:attr/segmentedButtonStyle"
+            tools:ignore="ButtonStyle" />
+
+        <Button
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:onClick="onSelectForeground"
+            android:text="@string/set_foreground"
+            android:textAllCaps="false"
+            style="?android:attr/segmentedButtonStyle"
+            tools:ignore="ButtonStyle" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_marginTop="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/choose_http_method"/>
+
+    <RadioGroup
+        android:id="@+id/radioHTTPMethod"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+            <RadioButton
+                android:id="@+id/rGET"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/get"
+                />
+            <RadioButton
+                android:id="@+id/rPOST"
+                android:checked="true"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/post"
+                />
+
+    </RadioGroup>
+
+
+    <TextView
+        android:layout_marginTop="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/server_url_and_post_data"/>
+
+    <EditText
+        android:id="@+id/editTextURL"
+        android:layout_width="match_parent"
+        android:hint="@string/url"
+        android:layout_height="wrap_content"
+        android:imeOptions="actionNext"
+        android:nextFocusDown="@+id/editTextData"
+        android:singleLine="true" />
+
+    <EditText
+        android:id="@+id/editTextData"
+        android:layout_width="match_parent"
+        android:hint="@string/data"
+        android:layout_height="wrap_content"
+        android:imeOptions="actionNext"
+        android:singleLine="true"
+        android:nextFocusDown="@+id/editTextUpdatePeriod"/>
+
+    <TextView
+        android:layout_marginTop="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/widget_update_period"/>
+
+    <EditText
+        android:id="@+id/editTextUpdatePeriod"
+        android:layout_width="match_parent"
+        android:hint="@string/minutes"
+        android:layout_height="wrap_content"
+        android:imeOptions="actionNext"
+        android:nextFocusDown="@+id/editTextRegex"
+        android:inputType="number"
+        android:singleLine="true" />
+
+    <TextView
+        android:layout_marginTop="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/regex_for_parsing_the_response"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <EditText
+            android:id="@+id/editTextRegex"
+            android:layout_weight="8"
+            android:hint="@string/regex"
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:singleLine="true"
+            android:nextFocusDown="@+id/editTextFind"
+            android:imeOptions="actionNext" />
+        <EditText
+            android:id="@+id/editTextFind"
+            android:layout_weight="1"
+            android:hint="@string/regex_find"
+            android:layout_height="wrap_content"
+            android:layout_width="wrap_content"
+            android:singleLine="true"
+            android:imeOptions="actionDone"
+            android:inputType="number"
+             />
+    </LinearLayout>
+
+    <Button
+        android:layout_marginTop="30dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="onApply"
+        style="?android:attr/segmentedButtonStyle"
+        android:text="@string/ok" />
+</LinearLayout>

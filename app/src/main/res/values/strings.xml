@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Data fetcher</string>
+    <string name="config">Config</string>
+    <string name="ok">OK</string>
+    <string name="img_settings">Img settings</string>
+    <string name="offline">Offline</string>
+    <string name="update">Update</string>
+    <string name="set_background">Background</string>
+    <string name="set_foreground">Foreground</string>
+    <string name="create_widget">Create widget</string>
+    <string name="url">URL</string>
+    <string name="data">Data</string>
+    <string name="post">POST</string>
+    <string name="get">GET</string>
+    <string name="choose_http_method">Choose HTTP method:</string>
+    <string name="select_colors">Set colors:</string>
+    <string name="regex_for_parsing_the_response">Regex to cut the response:</string>
+    <string name="server_url_and_post_data">Server URL and POST data:</string>
+    <string name="regex">Regex</string>
+    <string name="regex_find">Find</string>
+    <string name="widget_update_period">Widget update period</string>
+    <string name="minutes">Minutes</string>
+</resources>
