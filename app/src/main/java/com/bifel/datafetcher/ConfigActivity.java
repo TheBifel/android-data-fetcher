@@ -5,15 +5,11 @@ import android.app.Activity;
 import android.appwidget.AppWidgetManager;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.RadioGroup;
-import android.widget.RemoteViews;
 
-import com.android.volley.Request;
 import com.flask.colorpicker.ColorPickerView;
 import com.flask.colorpicker.builder.ColorPickerClickListener;
 import com.flask.colorpicker.builder.ColorPickerDialogBuilder;
@@ -28,17 +24,6 @@ public class ConfigActivity extends Activity {
     private EditText editTextRegexFind;
     private EditText editTextUpdatePeriod;
     private RadioGroup radioGroup;
-
-    public final static String WIDGET_PREF = "widget_pref";
-    public final static String BACKGROUND_COLOR = "background_color_";
-    public final static String FOREGROUND_COLOR = "foreground_color_";
-    public final static String SERVER_URL = "server_url_";
-    public final static String DATA = "data_";
-    public final static String HTTP_METHOD = "http_method_";
-    public final static String RB_HTTP_METHOD_CHECKED = "http_method_checked_";
-    public final static String REGEX = "regex_";
-    public final static String REGEX_FIND = "regex_find_";
-    public final static String UPDATE_PERIOD = "update_period_";
 
     @SuppressLint("SetTextI18n")
     @Override
@@ -59,21 +44,23 @@ public class ConfigActivity extends Activity {
 
         setContentView(R.layout.config);
 
-        SharedPreferences sp = getSharedPreferences(WIDGET_PREF, MODE_MULTI_PROCESS);
+        WidgetController controller = new WidgetController(AppWidgetManager.getInstance(this), this, widgetID);
+        Widget.activeWidgetControllers.put(widgetID, controller);
+
         editTextURL = findViewById(R.id.editTextURL);
-        editTextURL.setText(sp.getString(SERVER_URL + widgetID, ""));
+        editTextURL.setText(controller.getURL());
 
         editTextData = findViewById(R.id.editTextData);
-        editTextData.setText(sp.getString(DATA + widgetID, ""));
+        editTextData.setText(controller.getPOSTData());
 
         editTextRegex = findViewById(R.id.editTextRegex);
-        editTextRegex.setText(sp.getString(REGEX + widgetID, ""));
+        editTextRegex.setText(controller.getRegex());
 
         editTextRegexFind = findViewById(R.id.editTextFind);
-        editTextRegexFind.setText(sp.getString(REGEX_FIND + widgetID, ""));
+        editTextRegexFind.setText(controller.getRegexFind());
 
         editTextUpdatePeriod = findViewById(R.id.editTextUpdatePeriod);
-        editTextUpdatePeriod.setText(sp.getString(UPDATE_PERIOD + widgetID, "30"));
+        editTextUpdatePeriod.setText(String.valueOf(controller.getUpdatePeriod()));
 
         radioGroup = findViewById(R.id.radioHTTPMethod);
         radioGroup.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
@@ -86,47 +73,60 @@ public class ConfigActivity extends Activity {
                 }
             }
         });
-        radioGroup.check(sp.getInt(RB_HTTP_METHOD_CHECKED + widgetID, R.id.rPOST));
+        radioGroup.check(controller.getSelectedRadioButton(R.id.rPOST));
     }
 
+    @Override
+    public void finish() {
+//        Intent intent = new Intent(this, ConfigActivity.class);
+//        intent.setAction()
+//        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetID);
+//        sendOrderedBroadcast(intent, null);
+        System.out.println("----------------------------------------------------Config activity finished");
+        super.finish();
+    }
 
     public void onApply(View v) {
-        SharedPreferences sp = getSharedPreferences(WIDGET_PREF, MODE_MULTI_PROCESS);
+        WidgetController controller = Widget.activeWidgetControllers.get(widgetID);
         int checkedRadioButton = radioGroup.getCheckedRadioButtonId();
-        String updatePeriod = editTextUpdatePeriod.getText().toString();
-        updatePeriod = updatePeriod.equals("") ? "30" : updatePeriod;
-        Widget.UPDATE_PERIOD = Integer.valueOf(updatePeriod);
-        Editor editor = sp.edit();
-        editor.putInt(RB_HTTP_METHOD_CHECKED + widgetID, checkedRadioButton);
-        editor.putInt(HTTP_METHOD + widgetID, checkedRadioButton == R.id.rGET ? Request.Method.GET : Request.Method.POST);
-        editor.putString(SERVER_URL + widgetID, editTextURL.getText().toString());
-        editor.putString(DATA + widgetID, editTextData.getText().toString());
-        editor.putString(REGEX + widgetID, editTextRegex.getText().toString());
-        editor.putString(REGEX_FIND + widgetID, editTextRegexFind.getText().toString());
-        editor.putString(UPDATE_PERIOD + widgetID, updatePeriod);
-        editor.apply();
-        Widget.runUpdate(this, AppWidgetManager.getInstance(this), widgetID);
+        controller.putUpdatePeriod(editTextUpdatePeriod.getText().toString());
+        controller.putSelectedRadioButton(checkedRadioButton);
+        controller.putHttpMethod(checkedRadioButton);
+        controller.putURL(editTextURL.getText().toString());
+        controller.putPostData(editTextData.getText().toString());
+        controller.putRegex(editTextRegex.getText().toString());
+        controller.putRegexFind(editTextRegexFind.getText().toString());
+
         setResult(RESULT_OK, resultValue);
+        Widget.updateIntents(controller);
+        Widget.updateWidgetFont(controller);
         finish();
 
     }
 
     public void onSelectForeground(View v) {
-        onSelectColor(FOREGROUND_COLOR + widgetID, "Select foreground color");
+        onSelectColor("foreground", "Select foreground color");
     }
 
     public void onSelectBackground(View v) {
-        onSelectColor(BACKGROUND_COLOR + widgetID, "Select background color");
+        onSelectColor("background", "Select background color");
     }
 
-    public void onSelectColor(final String target, String title) {
-        final SharedPreferences sp = getSharedPreferences(WIDGET_PREF, MODE_MULTI_PROCESS);
-        ColorPickerDialogBuilder.with(this).setTitle(title).initialColor(sp.getInt(target, 0x7f00ff00)).wheelType(ColorPickerView.WHEEL_TYPE.FLOWER).density(10).setPositiveButton("Apply", new ColorPickerClickListener() {
+    public void onSelectColor(final String method, String title) {
+        final WidgetController controller = Widget.activeWidgetControllers.get(widgetID);
+        ColorPickerDialogBuilder
+                .with(this).setTitle(title)
+                .initialColor("background".equals(method) ? controller.getBackground(0x7f00ff00) : controller.getForeground(0x7f00ff00))
+                .wheelType(ColorPickerView.WHEEL_TYPE.FLOWER)
+                .density(10)
+                .setPositiveButton("Apply", new ColorPickerClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int selectedColor, Integer[] allColors) {
-                Editor editor = sp.edit();
-                editor.putInt(target, selectedColor);
-                editor.apply();
+                if ("background".equals(method)) {
+                    controller.putBackground(selectedColor);
+                } else {
+                    controller.putForeground(selectedColor);
+                }
             }
         }).build().show();
     }

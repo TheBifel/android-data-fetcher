@@ -7,13 +7,12 @@ import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.SharedPreferences.Editor;
-import android.graphics.Color;
 import android.os.Bundle;
-import android.view.View;
+import android.os.PowerManager;
+import android.util.SparseArray;
 import android.widget.RemoteViews;
 
+import com.android.volley.DefaultRetryPolicy;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
@@ -22,45 +21,57 @@ import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static android.content.Intent.*;
+
 public class Widget extends AppWidgetProvider {
 
     public static String DEFAULT_TEXT = "Something going wrong!";
     public static String NO_SUCCESSFUL_MATCH = "No successful match";
-    public static int UPDATE_PERIOD = 30;
 
-    private static final String CURRENT_TEXT = "current_text_";
     private static final String ACTION_ALARM = "action_alarm";
     private static final String ACTION_UPDATE = "action_update";
+    public static int UPDATE_PERIOD = 1;
+
+    public static SparseArray<WidgetController> activeWidgetControllers = new SparseArray<>();
 
     @Override
     public void onAppWidgetOptionsChanged(Context context, AppWidgetManager appWidgetManager, int appWidgetId, Bundle newOptions) {
-        SharedPreferences sp = context.getSharedPreferences(ConfigActivity.WIDGET_PREF, Context.MODE_MULTI_PROCESS);
-        trimToSize(sp.getString(CURRENT_TEXT + appWidgetId, DEFAULT_TEXT), appWidgetId, new RemoteViews(context.getPackageName(), R.layout.widget), appWidgetManager);
+        trimToSize(activeWidgetControllers.get(appWidgetId));
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions);
     }
 
     public void onUpdate(Context context, AppWidgetManager appWidgetManager, int[] appWidgetIds) {
         System.out.println("---------------------------------------------------------------------------------OnUpdate");
         super.onUpdate(context, appWidgetManager, appWidgetIds);
-        RemoteViews widgetView = new RemoteViews(context.getPackageName(), R.layout.widget);
-        SharedPreferences sp = context.getSharedPreferences(ConfigActivity.WIDGET_PREF, Context.MODE_MULTI_PROCESS);
 
         for (int widgetID : appWidgetIds) {
-            runUpdate(context, appWidgetManager, widgetID);
-            updateWidgetViews(false, DEFAULT_TEXT, widgetID, sp, widgetView, appWidgetManager);
+            WidgetController controller = Widget.activeWidgetControllers.get(widgetID);
+            if (controller == null) {
+                continue;
+            }
+            updateIntents(controller);
+            updateWidgetFont(controller);
+            updateWidgetViews(false, DEFAULT_TEXT, controller);
         }
     }
 
-    public static void runUpdate(Context context, AppWidgetManager appWidgetManager, int widgetID) {
+
+    public static void updateIntents(WidgetController controller) {
+        Context context = controller.getContext();
+
         System.out.println("---------------------------------------------------------------------------------RunUpdate");
-        RemoteViews widgetView = new RemoteViews(context.getPackageName(), R.layout.widget);
-        SharedPreferences sp = context.getSharedPreferences(ConfigActivity.WIDGET_PREF, Context.MODE_MULTI_PROCESS);
+        int widgetID = controller.getID();
+        RemoteViews widgetView = controller.getWidgetView();
+
         Intent configIntent = new Intent(context, ConfigActivity.class);
         configIntent.setAction(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE);
         configIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetID);
@@ -69,15 +80,15 @@ public class Widget extends AppWidgetProvider {
 
         Intent updateIntent = new Intent(context, Widget.class);
         updateIntent.setAction(ACTION_UPDATE);
-        updateIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, new int[] {widgetID});
+        updateIntent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetID);
         pIntent = PendingIntent.getBroadcast(context, widgetID, updateIntent, 0);
         widgetView.setOnClickPendingIntent(R.id.layout, pIntent);
 
-        Widget.updateWidgetFont(widgetID, sp, widgetView, appWidgetManager);
-        Widget.updateAlarm(true, context);
+        setAlarmIntent(true, context);
+        controller.getAppWidgetManager().updateAppWidget(widgetID, widgetView);
     }
 
-    public static void updateAlarm(boolean enable, Context context) {
+    public static void setAlarmIntent(boolean enable, Context context) {
         Intent intent = new Intent(context, Widget.class);
         intent.setAction(ACTION_ALARM);
         PendingIntent pIntent = PendingIntent.getBroadcast(context, 0, intent, 0);
@@ -91,115 +102,109 @@ public class Widget extends AppWidgetProvider {
 
     public void onDeleted(Context context, int[] appWidgetIds) {
         super.onDeleted(context, appWidgetIds);
-
-        Editor editor = context.getSharedPreferences(ConfigActivity.WIDGET_PREF, Context.MODE_PRIVATE).edit();
         for (int widgetID : appWidgetIds) {
-            editor.remove(ConfigActivity.BACKGROUND_COLOR + widgetID);
-            editor.remove(ConfigActivity.FOREGROUND_COLOR + widgetID);
-            editor.remove(ConfigActivity.SERVER_URL + widgetID);
-            editor.remove(ConfigActivity.DATA + widgetID);
-            editor.remove(ConfigActivity.REGEX + widgetID);
-            editor.remove(ConfigActivity.REGEX_FIND + widgetID);
-            editor.remove(ConfigActivity.HTTP_METHOD + widgetID);
-            editor.remove(ConfigActivity.RB_HTTP_METHOD_CHECKED + widgetID);
-            editor.remove(ConfigActivity.UPDATE_PERIOD + widgetID);
-            editor.remove(CURRENT_TEXT + widgetID);
+            WidgetController controller = activeWidgetControllers.get(widgetID);
+            if (controller != null) {
+                controller.clear();
+                setAlarmIntent(false, context);
+            }
+            activeWidgetControllers.remove(widgetID);
         }
-        editor.apply();
-
     }
 
     @Override
     public void onEnabled(Context context) {
         System.out.println("---------------------------------------------------------------------------------OnEnabled");
         super.onEnabled(context);
-        updateAlarm(true, context);
+        setAlarmIntent(true, context);
     }
 
     @Override
     public void onDisabled(Context context) {
         super.onDisabled(context);
-        updateAlarm(false, context);
+        setAlarmIntent(false, context);
     }
 
     @Override
     public void onReceive(Context context, Intent intent) {
         System.out.println("---------------------------------------------------------------------------------OnReceive");
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         super.onReceive(context, intent);
         AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(context);
         int ids[] = appWidgetManager.getAppWidgetIds(new ComponentName(context.getPackageName(), getClass().getName()));
-        RemoteViews widgetView = new RemoteViews(context.getPackageName(), R.layout.widget);
-        SharedPreferences sp = context.getSharedPreferences(ConfigActivity.WIDGET_PREF, Context.MODE_MULTI_PROCESS);
-
+        System.out.println(Arrays.toString(ids));
         for (int id : ids) {
-            if (ACTION_ALARM.equalsIgnoreCase(Objects.requireNonNull(intent.getAction()))) {
-                sendRequest(id, sp, widgetView, appWidgetManager, context);
+            WidgetController widget = activeWidgetControllers.get(id);
+            if (widget == null) {
+                widget = new WidgetController(appWidgetManager, context, id);
+                activeWidgetControllers.put(id, widget);
+                updateIntents(widget);
+                updateWidgetFont(widget);
+                updateWidgetFont(widget);
+                sendRequest(widget);
             }
-            if (intent.getAction().equalsIgnoreCase(ACTION_UPDATE)) {
-                sendRequest(id, sp, widgetView, appWidgetManager, context);
+            //noinspection deprecation
+            if (!Objects.requireNonNull(pm).isScreenOn()) {
+                System.out.println("Screen is off");
+                widget.neadToUpdate(true);
+                return;
+            }
+            if (Calendar.getInstance().getTimeInMillis() - widget.getLastUpdate() < 10000) {
+                System.out.println("-------------------------------Update blocked");
+                return;
+            }
+            if (ACTION_ALARM.equalsIgnoreCase(intent.getAction())) {
+                System.out.println("-------------------------------Received because of alarm");
+                sendRequest(widget);
+            }
+            if (ACTION_UPDATE.equalsIgnoreCase(intent.getAction())) {
+                System.out.println("-------------------------------Received because of touch");
+                sendRequest(widget);
+            }
+            if (ACTION_USER_PRESENT.equals(intent.getAction()) && widget.isNeadToUpdate()) {
+                System.out.println("-------------------------------Received because of unlock");
+                widget.neadToUpdate(false);
+                sendRequest(widget);
             }
         }
     }
 
-    public static void updateWidgetFont(final int widgetID, SharedPreferences sp, RemoteViews widgetView, AppWidgetManager widgetManager) {
+    public static void updateWidgetFont(WidgetController controller) {
         System.out.println("---------------------------------------------------------------------------------UpdateFont");
-        int bgColor = sp.getInt(ConfigActivity.BACKGROUND_COLOR + widgetID, 0x7f000000);
-        int fgColor = sp.getInt(ConfigActivity.FOREGROUND_COLOR + widgetID, 0xffffffff);
-        widgetView.setInt(R.id.background, "setColorFilter", bgColor);
-        widgetView.setInt(R.id.background, "setImageAlpha", Color.alpha(bgColor));
-        widgetView.setTextColor(R.id.txt, fgColor);
-        widgetView.setTextColor(R.id.offlineFlag, fgColor);
-
-        widgetManager.updateAppWidget(widgetID, widgetView);
+        controller.setBackground();
+        controller.setForeground();
+        controller.aply();
     }
 
-    public static void updateWidgetViews(boolean isSuccess, String response, final int widgetID, SharedPreferences sp, RemoteViews widgetView, AppWidgetManager widgetManager) {
+    public static void updateWidgetViews(boolean isSuccess, String response, WidgetController controller) {
         System.out.println("---------------------------------------------------------------------------------UpdateViews");
+        controller.setText(response);
         if (isSuccess) {
-            sp.edit().putString(CURRENT_TEXT + widgetID, response).apply();
-            widgetView.setViewVisibility(R.id.offlineFlag, View.INVISIBLE);
+            controller.setOfflineFlag(false);
         } else {
-            response = sp.getString(CURRENT_TEXT + widgetID, DEFAULT_TEXT);
-            widgetView.setViewVisibility(R.id.offlineFlag, View.VISIBLE);
+            controller.setOfflineFlag(true);
         }
-        widgetView.setTextViewText(R.id.txt, response);
-        widgetView.setViewVisibility(R.id.progressBar, View.INVISIBLE);
-        widgetManager.updateAppWidget(widgetID, widgetView);
-        trimToSize(response, widgetID, widgetView, widgetManager);
+        controller.setProgressBar(false);
+        controller.aply();
+        trimToSize(controller);
     }
 
-    private static void trimToSize(String response, int widgetID, RemoteViews widgetView, AppWidgetManager widgetManager) {
-        System.out.println("---------------------------------------------------------------------------------TrimToSize");
-        Bundle options = widgetManager.getAppWidgetOptions(widgetID);
-        final int maxWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH);
-        final int maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT);
-        int currentTextSize = 400;
-        int maxTextLen = (maxWidth / currentTextSize) * (maxHeight / currentTextSize);
-        while (maxTextLen < response.length() + 9 && currentTextSize > 10) {
-            currentTextSize -= 2;
-            maxTextLen = (maxWidth / currentTextSize) * (maxHeight / currentTextSize);
-        }
-        widgetView.setFloat(R.id.txt, "setTextSize", currentTextSize);
-        widgetView.setFloat(R.id.offlineFlag, "setTextSize", currentTextSize / 4);
-        widgetManager.updateAppWidget(widgetID, widgetView);
-    }
-
-    public static void sendRequest(final int widgetID, final SharedPreferences sp, final RemoteViews widgetView, final AppWidgetManager widgetManager, Context context) {
+    public static void sendRequest(final WidgetController controller) {
         System.out.println("---------------------------------------------------------------------------------SendRequest");
-        final String serverURL = sp.getString(ConfigActivity.SERVER_URL + widgetID, "");
+        final String serverURL = controller.getURL();
         if ("".equals(serverURL)) {
             return;
         }
-        widgetView.setViewVisibility(R.id.progressBar, View.VISIBLE);
-        widgetManager.updateAppWidget(widgetID, widgetView);
-        final int HTTPMethod = sp.getInt(ConfigActivity.HTTP_METHOD + widgetID, Request.Method.POST);
-        final RequestQueue myRequestQueue = Volley.newRequestQueue(context);
+        controller.setProgressBar(true);
+        controller.aply();
+        final int HTTPMethod = controller.getHTTPMethod();
+        final RequestQueue myRequestQueue = Volley.newRequestQueue(controller.getContext());
 
         Response.Listener<String> listener = new Response.Listener<String>() {
             @Override
             public void onResponse(String response) {
-                final String regex = sp.getString(ConfigActivity.REGEX + widgetID, "");
-                String find_field = sp.getString(ConfigActivity.REGEX_FIND + widgetID, "");
+                final String regex = controller.getRegex();
+                String find_field = controller.getRegexFind();
                 find_field = find_field.equals("") ? "1" : find_field;
                 final int find = Integer.valueOf(find_field);
 
@@ -215,14 +220,23 @@ public class Widget extends AppWidgetProvider {
                     }
 
                 }
-                updateWidgetViews(true, response, widgetID, sp, widgetView, widgetManager);
+                updateWidgetViews(true, response, controller);
+                controller.setLastUpdate(Calendar.getInstance().getTimeInMillis());
             }
         };
 
         Response.ErrorListener errorListener = new Response.ErrorListener() {
             @Override
             public void onErrorResponse(VolleyError error) {
-                updateWidgetViews(false, "", widgetID, sp, widgetView, widgetManager);
+                if (error.networkResponse != null) {
+                    int codeError = error.networkResponse.statusCode;
+                    if (400 <= codeError && codeError < 500) {
+                        updateWidgetViews(true, new String(error.networkResponse.data, StandardCharsets.UTF_8), controller);
+                        return;
+                    }
+                }
+                updateWidgetViews(false, controller.getText(DEFAULT_TEXT), controller);
+
             }
         };
 
@@ -237,7 +251,7 @@ public class Widget extends AppWidgetProvider {
             @Override
             public byte[] getBody() {
                 try {
-                    final String data = sp.getString(ConfigActivity.DATA + widgetID, "");
+                    final String data = controller.getPOSTData();
                     return data.getBytes(getParamsEncoding());
                 } catch (UnsupportedEncodingException uee) {
                     throw new RuntimeException("Encoding not supported: " + getParamsEncoding(), uee);
@@ -245,6 +259,23 @@ public class Widget extends AppWidgetProvider {
             }
         };
 
+        request.setRetryPolicy(new DefaultRetryPolicy(6000, 5, 1));
         myRequestQueue.add(request);
+    }
+
+    private static void trimToSize(WidgetController controller) {
+        System.out.println("---------------------------------------------------------------------------------TrimToSize");
+        String text = controller.getText(DEFAULT_TEXT);
+        Bundle options = controller.getWidgetOptions();
+        final int maxWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH);
+        final int maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT);
+        int currentTextSize = 400;
+        int maxTextLen = (maxWidth / currentTextSize) * (maxHeight / currentTextSize);
+        while (maxTextLen < text.length() + 9 && currentTextSize > 10) {
+            currentTextSize -= 2;
+            maxTextLen = (maxWidth / currentTextSize) * (maxHeight / currentTextSize);
+        }
+        controller.setForegroundSize(currentTextSize);
+        controller.aply();
     }
 }
